@@ -1,0 +1,47 @@
+model:
+  name: swin_loc
+  path: /home/aya/workspace/workshop/gpt_detection/HFD/output/train-2023-10-04-12-29-39/models
+  load_from_checkpoint: True
+  checkpoint_name: swin_loc_1.pth
+  use_gpu: True
+  pretrained: False
+
+train:
+  dataset:
+    data_root: '/home/aya/workspace/data/imdl/train/loc'
+    batch_size: 4
+    split: [0.7, 0.2, 0.1]    # split ratio for train, val, test
+  data_transforms:
+    crop: 256
+    crop_enabled: False
+    flip_enabled: False
+    normalize:
+      mean: [0.5, 0.5, 0.5]
+      std: [0.25, 0.25, 0.25]
+    normalize_enabled: True
+    post_processing:
+      gaussian:
+        prob: 0.5
+        sigma: 0.1
+      gaussian_enabled: False
+      jpeg:
+        prob: 0.5
+        quality: [90, 95]    # random choose a quality
+      jpeg_enabled: False
+    post_processing_enabled: False
+    resize: 256
+    resize_enabled: True
+  hyperparameter:
+    contrastive_loss: 0.01
+    contrastive_loss_enabled: False
+    early_stop: 15
+    early_stop_enabled: False
+    learning_rate: 0.002
+    weight_decay: 0
+  epoch: 30
+  metrics: [ACC, AUC, F1, mAP]
+  save_step: 5
+  save_dir: output
+  save_name: swin_loc
+  seed: 2
+  log_step: 1
