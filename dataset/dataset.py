@@ -38,11 +38,12 @@ class FolderDataset(Dataset):
     """
     def __getitem__(self, idx):
         img_pil = Image.open(self.images[idx][0]).convert('RGB')
-        img_cls = torch.tensor(self.images[idx][1], dtype=torch.int64)
-        img_transforms = self.transform if self.transform else transforms.Compose([
+        img_cls = torch.tensor(self.images[idx][1], dtype=torch.float)
+        img_transforms = self.transform if self.transform is not None else transforms.Compose([
             transforms.ToTensor(),
         ])
         img_t = img_transforms(img_pil)
+
         return img_cls, img_t
 
 

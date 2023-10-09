@@ -3,8 +3,19 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from .swin_transformer import SwinTransformer
+from.llm_backbone import LLMBackbone
 
-
+class EmbeddingNeck(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.embed_proj = nn.Linear(4096, 64)
+        
+    def forward(self, embedding):
+        B, C, L, D = embedding.shape
+        embedding = self.embed_proj(embedding).view(B, C * L, -1)
+        return embedding
+    
+    
 class UpsampleTransition(nn.Module):
     def __init__(self, in_chans, out_chans):
         super().__init__()
@@ -122,6 +133,15 @@ class LGMNet(nn.Module):
             patch_norm=True,
             out_indices=(0, 1, 2, 3),
             frozen_stages=-1)
+        self.prompts = [
+            'Is the image real or synthesized?'
+        ]
+        self.llm_backbone = LLMBackbone()
+        self.llm_backbone.freeze_weights()
+        self.embed_neck = EmbeddingNeck()
+        self.text_proj = nn.Linear(64, 1)
+        self.det_head = nn.Linear(64 * len(self.prompts), 1)
+
         self.leaky_relu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         self.sigmoid = nn.Sigmoid()
         self.upsample_transit_final = UpsampleTransition(24, 12)
@@ -162,10 +182,19 @@ class LGMNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
         self.apply(init_weight)
 
-    def forward(self, x):
+    def forward(self, x, det_only=False):
         H, W = x.shape[2:]
         img_feats = self.image_encoder(x)
         f1, f2, f3, f4 = img_feats
+        clip_vision_feat = self.llm_backbone.encode_vision(F.interpolate(x, size=(224, 224), mode='bilinear'))
+        response_embeddings, _ = self.llm_backbone(clip_vision_feat, self.prompts)
+        response_embeddings = response_embeddings.to(torch.float)
+        text_embeddings = self.embed_neck(response_embeddings)
+        text_feat = self.text_proj(text_embeddings).squeeze(2)
+        det = self.det_head(text_feat).squeeze(1)
+        det_logits = self.sigmoid(det)
+        if det_only:
+            return det_logits, None, None, None, None, None, None
         # 384, 8, 8
         f4 = self.upsample_transit4(f4)
         f4_attn_fusion = f4 + self.pam_4(f4) + self.cam_4(f4)
@@ -197,4 +226,4 @@ class LGMNet(nn.Module):
         f0_up = self.upsampler2(f0)
         f_final = self.upsample_transit_final(f0_up)
         final_map = self.map_transit_final(torch.cat([self.upsampler2(f0_map), f_final], dim=1))
-        return f4_map, f3_map, f2_map, f1_map, f0_map, final_map
+        return det_logits, f4_map, f3_map, f2_map, f1_map, f0_map, final_map
